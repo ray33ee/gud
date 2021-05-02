@@ -28,12 +28,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
       - creating patches for text and binary types
 - use .gudignore to allow user to selectively ignore files in a repo
 - Automatically add version number to changelog when committing
-- Change serialisation of Patches and metadata back to binary 
 - Make sure the version ID is created properly
+- Allow the arbitrary changing of version metadata (version number, version message, etc)
+- Make sure .gud folder is marked as hidden & read-only
+- Ability to revert to any arbitrary version
+- Create a special iterator over files in a directory using `walkdir` that
+    - Ignores files in the `.gud` folder
+    - Ignores files as specified in the .gudignore file
 
 ### Unfinished Ideas
-- Allow the arbitrary changing of version metadata (version number, version message, etc)
-  - How will this work with the version ID?
+
+
+## [0.1.2] - 2021-04-27
+### Changed
+- Project replaced with code from gud_archive and gud_archive is erm, archived...
 
 ## [0.1.1] - 2021-04-25
 ### Added
