@@ -7,7 +7,8 @@ use std::time::SystemTime;
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::collections::{HashMap};
 use lzma_rs::{lzma_compress, lzma_decompress};
-use diffy::Patch;
+use diffy::{Patch, apply_bytes};
+use std::str::from_utf8;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Contents {
@@ -391,8 +392,9 @@ impl ReadArchive {
         }
     }
 
-    pub fn file<W: Write, P: AsRef<Path>>(& mut self, version: usize, path: P, mut writer: & mut W) -> Option<()> {
+    fn get_raw_file<W: Write, P: AsRef<Path>>(& self, version: usize, path: P, mut writer: & mut W) -> Option<()> {
 
+        let mut fp = self.fp.try_clone().unwrap();
 
         let version = self.version_headers.get(version).unwrap();
 
@@ -400,14 +402,69 @@ impl ReadArchive {
 
         let size = header.compressed_size;
 
-        self.fp.seek(SeekFrom::Start(*offset)).unwrap();
+        fp.seek(SeekFrom::Start(*offset)).unwrap();
 
-        let mut taken = std::io::Read::by_ref(&mut self.fp).take(size);
+        let mut taken = std::io::Read::by_ref(&mut fp).take(size);
 
         lzma_decompress(& mut std::io::BufReader::new(& mut taken), & mut writer).unwrap();
 
         Some(())
     }
 
+    pub fn file<P: AsRef<Path>>(& mut self, version: usize, path: P) -> Option<String> {
+
+        if version == self.version_headers.len() - 1 {
+            //Just get the file from .last
+        }
+
+        let version_index = version  - {
+            let mut index = 0;
+
+            let mut it = self.version_headers.iter().rev();
+
+            it.advance_by(self.version_headers.len() - version - 1).unwrap();
+
+            for (i, version_header) in it.enumerate() {
+
+                let (_, file_header) = version_header.files.get(&PathBuf::from(path.as_ref()))?;
+
+                if let Contents::Snapshot = file_header.contents {
+                    index = i;
+                    break;
+                }
+            }
+
+            println!("ind: {}", index);
+            index
+        };
+
+        println!("Snapshot index: {}", version_index);
+
+        //Now we have the index of the original snapshot for the file, keep getting and applying patches
+
+        let mut it = self.version_headers.iter().take(version+1);
+
+        it.advance_by(version_index+1);
+
+        let mut previous = Vec::new();
+        let mut patch = Vec::new();
+
+        self.get_raw_file(version_index, path.as_ref(), & mut previous);
+
+        for (i, version) in it.enumerate() {
+            println!("repair: {}", version_index+i+1);
+            self.get_raw_file(version_index+i+1, path.as_ref(), & mut patch);
+
+
+            println!("patch: {}", from_utf8(&patch).unwrap());
+            previous = apply_bytes(&previous, &Patch::from_bytes(&patch).unwrap()).unwrap();
+
+            patch.clear();
+        }
+
+        println!("index: {}", from_utf8(&previous).unwrap());
+
+        Some(String::new())
+    }
 
 }

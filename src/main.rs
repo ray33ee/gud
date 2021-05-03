@@ -1,4 +1,5 @@
 #![feature(seek_stream_len)]
+#![feature(iter_advance_by)]
 
 mod archive;
 mod walk_repo;
@@ -12,6 +13,7 @@ use zip::write::FileOptions;
 use diffy::{create_patch, Patch, DiffOptions};
 use std::str::{from_utf8_unchecked, from_utf8};
 use std::ops::Deref;
+use crate::walk_repo::RepoWalker;
 
 fn create_repo(archive: & mut Archive, number: VersionNumber, message: String) {
 
@@ -21,23 +23,11 @@ fn create_repo(archive: & mut Archive, number: VersionNumber, message: String) {
 
     let mut appender = archive.appender(number, message);
 
-    for entry in WalkDir::new(".").into_iter().filter_entry(|dir| {
+    for  file_path in RepoWalker::new(".").map(|x| x.unwrap())   {
 
-        dir.path() != Path::new(".").join(".gud")
-    })
-        .into_iter()
-        .filter_map(|e| e.ok()) {
+        println!("file: {}", file_path.to_str().unwrap());
 
-        let file_path = entry.path();
-
-        if file_path.is_file() {
-
-            println!("file: {}", file_path.to_str().unwrap());
-
-            appender.append_snapshot(file_path);
-
-        }
-
+        appender.append_snapshot(file_path.as_path());
 
     }
 
@@ -55,25 +45,13 @@ fn create_snapshot() {
 
     let mut zip = zip::ZipWriter::new(fp);
 
-    for entry in WalkDir::new(".").into_iter().filter_entry(|dir| {
+    for  file_path in RepoWalker::new(".").map(|x| x.unwrap())   {
 
-        dir.path() != Path::new(".").join(".gud")
-    })
-        .into_iter()
-        .filter_map(|e| e.ok()) {
+        println!("file: {}", file_path.to_str().unwrap());
 
-        let file_path = entry.path();
+        zip.start_file(file_path.to_str().unwrap(), FileOptions::default()).unwrap();
 
-        if file_path.is_file() {
-
-            println!("file: {}", file_path.to_str().unwrap());
-
-            zip.start_file(file_path.to_str().unwrap(), FileOptions::default()).unwrap();
-
-            copy(& mut File::open(file_path).unwrap(), & mut zip).unwrap();
-
-        }
-
+        copy(& mut File::open(file_path).unwrap(), & mut zip).unwrap();
 
     }
 }
@@ -98,56 +76,38 @@ fn commit_version(mut archive: & mut Archive, number: VersionNumber, message: St
 
     diff_options.set_context_len(0);
 
-    for entry in WalkDir::new(".").into_iter().filter_entry(|dir| {
+    for file_path in RepoWalker::new(".").map(|x| x.unwrap()) {
+        println!("file: {}", file_path.to_str().unwrap());
 
-        dir.path() != Path::new(".").join(".gud")
-    })
-        .into_iter()
-        .filter_map(|e| e.ok()) {
+        let mut repo_fp = OpenOptions::new()
+            .read(true)
+            .open(file_path.as_path()).unwrap();
 
-        let file_path = entry.path();
+        if let Ok(mut data) = last.by_name(file_path.to_str().unwrap()) {
+            let mut zip_str_buffer = String::new();
+            let mut repo_str_buffer = String::new();
 
-        if file_path.is_file() {
+            data.read_to_string(&mut zip_str_buffer).unwrap();
 
-            println!("file: {}", file_path.to_str().unwrap());
+            repo_fp.read_to_string(&mut repo_str_buffer).unwrap();
 
-            let mut repo_fp = OpenOptions::new()
-                .read(true)
-                .open(file_path).unwrap();
+            let patch = diff_options.create_patch(&zip_str_buffer, &repo_str_buffer);
 
-            if let Ok(mut data) = last.by_name(file_path.to_str().unwrap()) {
+            println!("Patch: {}", patch);
 
-                let mut zip_str_buffer = String::new();
-                let mut repo_str_buffer = String::new();
+            appender.append_patch(file_path.as_path(), &patch);
 
-                data.read_to_string(& mut zip_str_buffer).unwrap();
-
-                repo_fp.read_to_string(& mut repo_str_buffer).unwrap();
-
-                let patch = diff_options.create_patch(&zip_str_buffer, &repo_str_buffer);
-
-                appender.append_patch(file_path, &patch);
-
-                println!("Original: {}", zip_str_buffer);
-                println!("     New: {}", repo_str_buffer);
-
-            } else {
-                //Commit as a snapshot
-                appender.append_snapshot(file_path);
-            }
-
-
-
-
+            println!("Original: {}", zip_str_buffer);
+            println!("     New: {}", repo_str_buffer);
+        } else {
+            //Commit as a snapshot
+            appender.append_snapshot(file_path.as_path());
         }
-
-
     }
 
     create_snapshot();
 
     appender.finish();
-
 }
 
 fn main() {
@@ -160,20 +120,16 @@ fn main() {
 
     let mut archive = Archive::new(Path::new(".").join(".gud").join(".versions"));
 
-    create_repo(& mut archive, VersionNumber{ number: 100 }, String::from("initial commit"));
+    //create_repo(& mut archive, VersionNumber{ number: 100 }, String::from("initial commit"));
 
-    commit_version(& mut archive, VersionNumber{ number: 102 }, String::from("Version 3"));
+    //commit_version(& mut archive, VersionNumber{ number: 101 }, String::from("Version 1"));
+
+    //commit_version(& mut archive, VersionNumber{ number: 102 }, String::from("Version 2"));
 
     let mut reader = archive.reader();
 
-    let mut bytes = Vec::new();
+    reader.file(2, ".\\a.txt").unwrap();
 
-    reader.file(1, ".\\a.txt", & mut bytes);
-
-    let patch = Patch::from_bytes(&bytes).unwrap();
-
-    println!("help {}", from_utf8(&bytes).unwrap());
-    println!("hunkks: {:?}", patch.hunks());
 
     set_current_dir(current).unwrap();
 

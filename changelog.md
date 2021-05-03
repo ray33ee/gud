@@ -32,12 +32,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Allow the arbitrary changing of version metadata (version number, version message, etc)
 - Make sure .gud folder is marked as hidden & read-only
 - Ability to revert to any arbitrary version
-- Create a special iterator over files in a directory using `walkdir` that
-    - Ignores files in the `.gud` folder
-    - Ignores files as specified in the .gudignore file
 
 ### Unfinished Ideas
 
+## [0.1.3] - 2021-05-02
+### Added
+- Special `RepoWalker` iterator which walks over items in the repo
+    - Returning a path
+    - Ignoring directories
+    - Ignoring the .gud folder
+    - And can be modified to ignore items as specified by the .gudignore file
+- `ReadArchive::file` now allows us to arbitrarily retrieve files from any version
 
 ## [0.1.2] - 2021-04-27
 ### Changed
