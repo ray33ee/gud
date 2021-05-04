@@ -31,9 +31,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Make sure the version ID is created properly
 - Allow the arbitrary changing of version metadata (version number, version message, etc)
 - Make sure .gud folder is marked as hidden & read-only
-- Ability to revert to any arbitrary version
 
 ### Unfinished Ideas
+
+## [0.1.4] - 2021-05-03
+### Added
+- `ReadArchive::revert` which overwrites the entire repo with a previous version
 
 ## [0.1.3] - 2021-05-02
 ### Added

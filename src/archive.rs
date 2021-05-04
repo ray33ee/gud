@@ -1,14 +1,16 @@
 
 
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, copy};
 use std::path::{PathBuf, Path};
 use serde::{Serialize, Deserialize};
 use std::time::SystemTime;
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::collections::{HashMap};
 use lzma_rs::{lzma_compress, lzma_decompress};
-use diffy::{Patch, apply_bytes};
+use diffy::{Patch, apply_bytes, DiffOptions};
 use std::str::from_utf8;
+use crate::walk_repo::RepoWalker;
+use zip::write::FileOptions;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Contents {
@@ -230,6 +232,92 @@ impl Archive {
     pub fn reader(& mut self) -> ReadArchive {
         ReadArchive::new(&self.path)
     }
+
+
+    pub fn create_repo(& mut self, number: VersionNumber, message: String) {
+
+        std::fs::create_dir(Path::new(".").join(".gud")).unwrap();
+
+        self.create();
+
+        let mut appender = self.appender(number, message);
+
+        for  file_path in RepoWalker::default().map(|x| x.unwrap())   {
+
+            appender.append_snapshot(file_path.as_path());
+
+        }
+
+        appender.finish();
+
+        self.create_snapshot();
+    }
+
+    fn create_snapshot(& mut self) {
+
+        let fp = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(Path::new(".").join(".gud").join(".last")).unwrap();
+
+        let mut zip = zip::ZipWriter::new(fp);
+
+        for  file_path in RepoWalker::default().map(|x| x.unwrap())   {
+
+            zip.start_file(file_path.to_str().unwrap(), FileOptions::default()).unwrap();
+
+            std::io::copy(& mut File::open(file_path).unwrap(), & mut zip).unwrap();
+
+        }
+    }
+
+    pub fn commit_version(& mut self, number: VersionNumber, message: String) {
+
+        //Iterate over each file in the repo
+        //    If the file exists in .last AND is suitable for use with diffy, compute a patch and push it. Otherwise push a snapshot
+        //    Add each file to a .last.new archive
+        //delete the old .last
+        //rename .last.new to .last
+
+        let mut appender = self.appender(number, message);
+
+        let fp = OpenOptions::new()
+            .read(true)
+            .open(Path::new(".").join(".gud").join(".last")).unwrap();
+
+        let mut last = zip::ZipArchive::new(fp).unwrap();
+
+        let mut diff_options = DiffOptions::new();
+
+        diff_options.set_context_len(0);
+
+        for file_path in RepoWalker::default().map(|x| x.unwrap()) {
+
+            let mut repo_fp = OpenOptions::new()
+                .read(true)
+                .open(file_path.as_path()).unwrap();
+
+            if let Ok(mut data) = last.by_name(file_path.to_str().unwrap()) {
+                let mut zip_str_buffer = String::new();
+                let mut repo_str_buffer = String::new();
+
+                data.read_to_string(&mut zip_str_buffer).unwrap();
+
+                repo_fp.read_to_string(&mut repo_str_buffer).unwrap();
+
+                let patch = diff_options.create_patch(&zip_str_buffer, &repo_str_buffer);
+
+                appender.append_patch(file_path.as_path(), &patch);
+            } else {
+                //Commit as a snapshot
+                appender.append_snapshot(file_path.as_path());
+            }
+        }
+
+        self.create_snapshot();
+
+        appender.finish();
+    }
 }
 
 pub struct AppendArchive {
@@ -417,7 +505,7 @@ impl ReadArchive {
             //Just get the file from .last
         }
 
-        let version_index = version  - {
+        let version_index = version - {
             let mut index = 0;
 
             let mut it = self.version_headers.iter().rev();
@@ -444,14 +532,14 @@ impl ReadArchive {
 
         let mut it = self.version_headers.iter().take(version+1);
 
-        it.advance_by(version_index+1);
+        it.advance_by(version_index+1).unwrap();
 
         let mut previous = Vec::new();
         let mut patch = Vec::new();
 
         self.get_raw_file(version_index, path.as_ref(), & mut previous);
 
-        for (i, version) in it.enumerate() {
+        for (i, _) in it.enumerate() {
             println!("repair: {}", version_index+i+1);
             self.get_raw_file(version_index+i+1, path.as_ref(), & mut patch);
 
@@ -462,9 +550,38 @@ impl ReadArchive {
             patch.clear();
         }
 
-        println!("index: {}", from_utf8(&previous).unwrap());
+        println!("sss: {}", from_utf8(&previous).unwrap());
 
-        Some(String::new())
+        Some(String::from(from_utf8(&previous).unwrap()))
+    }
+
+    pub fn revert(& mut self, version_id: usize) -> Option<()> {
+        //This will delete the contents of the repo, and replace it with the contents of the version at 'version_id'
+
+
+        //First, delete the contents of the repo (except .gud of course)
+
+        //Iterate over every file in the desired version
+        //    restore the file via Archive::file and
+
+        let version_header = self.version_headers.get(version_id)?;
+        println!("file: {:?}", version_header.files.clone());
+
+        for (file_path, (_,_)) in version_header.files.clone().iter() {
+            let file_contents = self.file(version_id, file_path.as_path()).unwrap();
+
+            let mut fp = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(file_path).unwrap();
+
+            println!("path: {}", file_path.to_str().unwrap());
+
+            println!("written: {}", fp.write(file_contents.as_bytes()).unwrap());
+        }
+
+
+        Some(())
     }
 
 }

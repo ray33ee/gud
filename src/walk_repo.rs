@@ -4,17 +4,25 @@ use std::path::{PathBuf, Path};
 use std::error::Error;
 
 pub struct RepoWalker {
-    walker: walkdir::IntoIter
+    walker: walkdir::IntoIter,
+    ignore_directories: bool
 }
 
 impl RepoWalker {
-    pub fn new<P: AsRef<Path>>(repo_path: P) -> Self {
+    pub fn new<P: AsRef<Path>>(repo_path: P, ignore_directories: bool) -> Self {
 
         //ToDo: When a RepoWalker instance is created, search for a .gudignore and add its rules to the ignore list
 
         RepoWalker {
             walker: WalkDir::new(repo_path).into_iter(),
+            ignore_directories,
         }
+    }
+}
+
+impl Default for RepoWalker {
+    fn default() -> Self {
+        Self::new(Path::new("."), true)
     }
 }
 
@@ -37,8 +45,8 @@ impl Iterator for RepoWalker {
                 }
                 continue;
             }
-            //We are only interested in walking through the files, not the directories themselves
-            if dent.path().is_dir() {
+            //If we are only interested in walking through the files skip directories
+            if self.ignore_directories && dent.path().is_dir() {
                 continue;
             }
             return Some(Ok(dent.into_path()));
